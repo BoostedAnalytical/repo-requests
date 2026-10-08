@@ -20,7 +20,7 @@ jobs:
     environment: repo-creation
     env:
       ORG: ${{ github.repository_owner }}
-      # Teams allowed to run this. The requester's team(s) from this list get Write on the new repo.
+      # Teams allowed to run this. What each gets on the new repo is set in 'Grant team access'.
       CREATOR_TEAMS: "boosted_developers boosted_marketing"
     steps:
       - name: Get app token
@@ -77,14 +77,19 @@ jobs:
           NAME: ${{ inputs.repo_name }}
           TEAMS: ${{ steps.teams.outputs.matched }}
         run: |
+          grant() {
+            gh api --silent -X PUT "orgs/$ORG/teams/$1/repos/$ORG/$NAME" -f permission="$2"
+            echo "Granted $1 $2 on $NAME"
+          }
+          # Access depends on which creator team the requester is in
           for team in $TEAMS; do
-            gh api --silent -X PUT "orgs/$ORG/teams/$team/repos/$ORG/$NAME" -f permission=push
-            echo "Granted $team Write on $NAME"
-            # Extra access by requester's team
             case "$team" in
+              boosted_marketing)
+                grant boosted_marketing admin
+                ;;
               boosted_developers)
-                gh api --silent -X PUT "orgs/$ORG/teams/boosted/repos/$ORG/$NAME" -f permission=pull
-                echo "Granted boosted Read on $NAME"
+                grant boosted_developers push
+                grant boosted pull
                 ;;
             esac
           done
