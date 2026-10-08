@@ -1,0 +1,83 @@
+name: Create repository
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo_name:
+        description: "Repository name (lowercase letters, numbers, - . _)"
+        required: true
+        type: string
+      description:
+        description: "Short description"
+        required: false
+        type: string
+
+permissions: {}
+
+jobs:
+  create:
+    runs-on: ubuntu-latest
+    environment: repo-creation
+    env:
+      ORG: ${{ github.repository_owner }}
+      # Teams allowed to run this. The requester's team(s) from this list get Write on the new repo.
+      CREATOR_TEAMS: "boosted_developers boosted_marketing"
+    steps:
+      - name: Get app token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.REPO_CREATOR_APP_ID }}
+          private-key: ${{ secrets.REPO_CREATOR_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Check requester is on a creator team
+        id: teams
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          matched=""
+          for team in $CREATOR_TEAMS; do
+            state=$(gh api "orgs/$ORG/teams/$team/memberships/$ACTOR" --jq .state 2>/dev/null || true)
+            if [ "$state" = "active" ]; then
+              matched="$matched $team"
+            fi
+          done
+          if [ -z "$matched" ]; then
+            echo "::error::$ACTOR is not an active member of any of: $CREATOR_TEAMS"
+            exit 1
+          fi
+          echo "matched=$matched" >> "$GITHUB_OUTPUT"
+
+      - name: Validate name
+        env:
+          NAME: ${{ inputs.repo_name }}
+        run: |
+          if ! [[ "$NAME" =~ ^[a-z0-9][a-z0-9._-]{0,99}$ ]]; then
+            echo "::error::Invalid repo name: $NAME"
+            exit 1
+          fi
+
+      - name: Create repository
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          NAME: ${{ inputs.repo_name }}
+          DESC: ${{ inputs.description }}
+        run: |
+          gh api --silent -X POST "orgs/$ORG/repos" \
+            -f name="$NAME" \
+            -f description="$DESC" \
+            -f visibility=private \
+            -F auto_init=true
+
+      - name: Grant requester's team Write
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          NAME: ${{ inputs.repo_name }}
+          TEAMS: ${{ steps.teams.outputs.matched }}
+        run: |
+          for team in $TEAMS; do
+            gh api --silent -X PUT "orgs/$ORG/teams/$team/repos/$ORG/$NAME" -f permission=push
+            echo "Granted $team Write on $NAME"
+          done
