@@ -85,7 +85,7 @@ jobs:
           for team in $TEAMS; do
             case "$team" in
               boosted_marketing)
-                grant boosted_marketing admin
+                grant boosted_marketing push
                 ;;
               boosted_developers)
                 grant boosted_developers push
