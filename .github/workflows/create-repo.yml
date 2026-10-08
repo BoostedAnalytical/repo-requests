@@ -71,7 +71,7 @@ jobs:
             -f visibility=private \
             -F auto_init=true
 
-      - name: Grant requester's team Write
+      - name: Grant team access
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           NAME: ${{ inputs.repo_name }}
@@ -80,4 +80,11 @@ jobs:
           for team in $TEAMS; do
             gh api --silent -X PUT "orgs/$ORG/teams/$team/repos/$ORG/$NAME" -f permission=push
             echo "Granted $team Write on $NAME"
+            # Extra access by requester's team
+            case "$team" in
+              boosted_developers)
+                gh api --silent -X PUT "orgs/$ORG/teams/boosted/repos/$ORG/$NAME" -f permission=pull
+                echo "Granted boosted Read on $NAME"
+                ;;
+            esac
           done
