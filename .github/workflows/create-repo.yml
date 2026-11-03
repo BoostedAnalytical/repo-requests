@@ -60,16 +60,19 @@ jobs:
           fi
 
       - name: Create repository
+        id: create
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           NAME: ${{ inputs.repo_name }}
           DESC: ${{ inputs.description }}
         run: |
-          gh api --silent -X POST "orgs/$ORG/repos" \
+          repo_id=$(gh api -X POST "orgs/$ORG/repos" \
             -f name="$NAME" \
             -f description="$DESC" \
             -f visibility=private \
-            -F auto_init=true
+            -F auto_init=true \
+            --jq .id)
+          echo "repo_id=$repo_id" >> "$GITHUB_OUTPUT"
 
       - name: Grant team access
         env:
@@ -93,3 +96,20 @@ jobs:
                 ;;
             esac
           done
+
+      - name: Add repo to developers runner group
+        if: contains(steps.teams.outputs.matched, 'boosted_developers')
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          NAME: ${{ inputs.repo_name }}
+          REPO_ID: ${{ steps.create.outputs.repo_id }}
+          GROUP: runners-boosted_developers
+        run: |
+          gid=$(gh api --paginate "orgs/$ORG/actions/runner-groups" \
+            --jq ".runner_groups[] | select(.name == \"$GROUP\") | .id")
+          if [ -z "$gid" ]; then
+            echo "::warning::Runner group $GROUP not found; $NAME not added"
+            exit 0
+          fi
+          gh api --silent -X PUT "orgs/$ORG/actions/runner-groups/$gid/repositories/$REPO_ID"
+          echo "Added $NAME to $GROUP"
